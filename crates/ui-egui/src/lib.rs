@@ -746,6 +746,17 @@ impl SheetApp {
                     self.open_path(&path);
                 }
             }
+            // Data › Get Data: pick a file and import it into a new sheet of the open workbook
+            // (`file.open` would replace the workbook). Without a native picker, fall back to Open.
+            "getData" => {
+                if let Some(pick) = &self.services.pick_open {
+                    if let Some(path) = pick() {
+                        self.run_or_alert("data.getData", json!({"path": path}));
+                    }
+                } else {
+                    self.open_dialog("open", json!({}));
+                }
+            }
             "saveAs" => {
                 let suggested = self.session.active().map(|d| d.display_title()).unwrap_or_else(|| "Book1".into());
                 if let Some(pick) = &self.services.pick_save {

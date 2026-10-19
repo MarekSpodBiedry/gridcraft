@@ -244,3 +244,22 @@ fn a_cancelled_export_pdf_picker_writes_nothing() {
     assert!(h.state().message.is_none());
     assert!(h.state_mut().session.take_ui_requests().is_empty());
 }
+
+#[test]
+fn get_data_imports_a_csv_into_the_open_workbook_instead_of_replacing_it() {
+    let dir = std::env::temp_dir().join(format!("gridcraft-get-data-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let csv = dir.join("people.csv");
+    std::fs::write(&csv, "name,age\nAda,36\n").unwrap();
+    let picked = csv.to_string_lossy().to_string();
+    let mut h = harness(Services { pick_open: Some(Box::new(move || Some(picked.clone()))), ..Default::default() });
+    h.state_mut().run("cell.set", serde_json::json!({"cell": "A1", "input": "42"})).unwrap();
+    // The ribbon button and the keytip both run `data.getData` with no file named.
+    h.state_mut().run_or_alert("data.getData", serde_json::json!({}));
+    assert_eq!(h.state().session.documents().len(), 1, "the workbook is not replaced or duplicated");
+    let d = h.state().session.active().unwrap();
+    assert_eq!(d.wb.sheets.len(), 2, "the data lands on a new sheet");
+    assert_eq!(d.wb.sheets[0].value(CellRef::new(0, 0)), Value::Number(42.0), "the original sheet is untouched");
+    assert_eq!(d.wb.active().unwrap().value(CellRef::new(1, 1)), Value::Number(36.0));
+    let _ = std::fs::remove_dir_all(&dir);
+}
