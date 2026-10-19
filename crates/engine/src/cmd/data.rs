@@ -199,8 +199,9 @@ fn expand_sort_range(s: &Session, p: &Json, r: RangeRef) -> Result<RangeRef> {
 }
 
 fn quick_sort(s: &mut Session, p: &Json, asc: bool) -> Result<Json> {
-    let r = expand_sort_range(s, p, data_range(s, p)?)?;
-    let col = col_param(p.get("column"), r.start.col).unwrap_or(s.doc()?.selection.active.col).clamp(r.start.col, r.end.col);
+    let picked = data_range(s, p)?;
+    let r = expand_sort_range(s, p, picked)?;
+    let col = col_param(p.get("column"), picked.start.col).unwrap_or(s.doc()?.selection.active.col).clamp(r.start.col, r.end.col);
     let d = s.doc()?;
     let sh = d.wb.active().ok_or(EngineError::NoDocument)?;
     let header = guess_header(&d.wb, sh, r);
@@ -209,7 +210,8 @@ fn quick_sort(s: &mut Session, p: &Json, asc: bool) -> Result<Json> {
 
 fn sort(s: &mut Session, p: &Json) -> Result<Json> {
     let by_cols = str_param(p, "orientation") == Some("columns");
-    let r = if by_cols { data_range(s, p)? } else { expand_sort_range(s, p, data_range(s, p)?)? };
+    let picked = data_range(s, p)?;
+    let r = if by_cols { picked } else { expand_sort_range(s, p, picked)? };
     let d = s.doc()?;
     let sh = d.wb.active().ok_or(EngineError::NoDocument)?;
     let header = bool_param(p, "header").unwrap_or_else(|| guess_header(&d.wb, sh, r));
@@ -227,7 +229,8 @@ fn sort(s: &mut Session, p: &Json) -> Result<Json> {
             };
             row.or_else(|| col_param(k.get("column"), r.start.row))
         } else {
-            col_param(k.get("column"), r.start.col)
+            // Numeric offsets count from the range the user picked, not from the expanded one.
+            col_param(k.get("column"), picked.start.col)
         };
         let Some(col) = col else { continue };
         keys.push(SortKey {
