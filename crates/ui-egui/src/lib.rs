@@ -189,6 +189,9 @@ pub struct Services {
     pub paste_text: Option<Box<dyn FnMut() -> Option<String>>>,
     /// Web: deliver a file to the user (name, bytes).
     pub download: Option<Box<dyn Fn(&str, &[u8])>>,
+    /// Web: names of the files `download` has finished writing. A saved workbook counts as
+    /// saved once its name arrives here, not before the browser has written it.
+    pub delivered: Option<Delivered>,
     /// Web: start an asynchronous file pick; the bytes arrive later in `inbox`.
     pub open_async: Option<Box<dyn Fn()>>,
     /// Files delivered asynchronously (name, bytes), opened on the next frame.
@@ -197,6 +200,9 @@ pub struct Services {
     /// no intermediate file) — opens the system print dialog on that PDF.
     pub print: Option<Box<dyn Fn(&[u8])>>,
 }
+
+/// Shared queue of file names whose download finished (see [`Services::delivered`]).
+pub type Delivered = std::sync::Arc<std::sync::Mutex<Vec<String>>>;
 
 /// Shared queue of files read asynchronously (browser file picker, drag and drop).
 pub type Inbox = std::sync::Arc<std::sync::Mutex<Vec<(String, Vec<u8>)>>>;
@@ -285,6 +291,8 @@ pub struct SheetApp {
     /// holding other text. Once the cut has been pasted, Paste leaves this text alone.
     cut_text: Option<String>,
     pub started: f64,
+    /// Workbooks handed to `download` and not yet confirmed written: (file name, doc uid, content).
+    pending_saves: Vec<(String, u64, std::sync::Arc<gridcraft_engine::model::Workbook>)>,
 }
 
 impl SheetApp {
@@ -328,6 +336,7 @@ impl SheetApp {
             selected_chart: None,
             clipboard_text_at_copy: None,
             cut_text: None,
+            pending_saves: Vec::new(),
             started: now_ms(),
         }
     }
@@ -760,6 +769,12 @@ impl SheetApp {
                 {
                     let name = r.get("name").and_then(Json::as_str).unwrap_or("Book.xlsx").to_string();
                     dl(&name, &b);
+                    // An earlier save of this name was written, cancelled or is superseded by this one.
+                    self.pending_saves.retain(|(n, ..)| *n != name);
+                    if let Some(d) = self.session.active() {
+                        let snapshot = (name, d.uid, d.wb.clone());
+                        self.pending_saves.push(snapshot);
+                    }
                 }
             }
             // File › Options (`file.options`) and the File tab itself open the Backstage view.
@@ -1094,6 +1109,19 @@ impl SheetApp {
             ctx.request_repaint();
         }
         control::poll(self, ctx);
+        // Downloads the browser finished writing: the workbook saved then is clean (unless edited since).
+        let delivered: Vec<String> = self
+            .services
+            .delivered
+            .as_ref()
+            .map(|q| std::mem::take(&mut *q.lock().unwrap_or_else(std::sync::PoisonError::into_inner)))
+            .unwrap_or_default();
+        for name in delivered {
+            if let Some(i) = self.pending_saves.iter().position(|(n, ..)| *n == name) {
+                let (_, uid, wb) = self.pending_saves.remove(i);
+                self.session.mark_saved(uid, wb);
+            }
+        }
         // Files read asynchronously (web file picker, dropped files).
         let arrived: Vec<(String, Vec<u8>)> = self
             .services

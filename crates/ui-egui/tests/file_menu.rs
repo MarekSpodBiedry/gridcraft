@@ -244,3 +244,43 @@ fn a_cancelled_export_pdf_picker_writes_nothing() {
     assert!(h.state().message.is_none());
     assert!(h.state_mut().session.take_ui_requests().is_empty());
 }
+
+#[test]
+fn web_save_clears_the_edited_marker_once_the_download_is_written() {
+    let files = Arc::new(Mutex::new(Vec::<String>::new()));
+    let capture = files.clone();
+    let delivered = gridcraft_ui_egui::Delivered::default();
+    let mut h = harness(Services {
+        download: Some(Box::new(move |name, _| capture.lock().unwrap().push(name.to_string()))),
+        delivered: Some(delivered.clone()),
+        ..Default::default()
+    });
+    h.state_mut().run("cell.set", serde_json::json!({"cell": "A1", "input": "42"})).unwrap();
+    h.state_mut().open_dialog("saveAs", serde_json::json!({}));
+    h.run_steps(2);
+    let name = files.lock().unwrap().first().cloned().expect("Save As hands the workbook to the browser");
+    assert!(h.state().session.active().unwrap().is_dirty(), "still unsaved until the browser has written the file");
+
+    // An edit made while the file was being written stays unsaved.
+    delivered.lock().unwrap().push(name);
+    h.state_mut().run("cell.set", serde_json::json!({"cell": "A2", "input": "7"})).unwrap();
+    h.run_steps(2);
+    assert!(h.state().session.active().unwrap().is_dirty(), "a later edit is not covered by the save");
+
+    // Saving again and confirming it leaves the document clean.
+    h.state_mut().open_dialog("saveAs", serde_json::json!({}));
+    let name = files.lock().unwrap().last().cloned().unwrap();
+    delivered.lock().unwrap().push(name);
+    h.run_steps(2);
+    assert!(!h.state().session.active().unwrap().is_dirty(), "a written save clears the edited marker");
+
+    // A save the user cancelled in the picker is never written; the next written save still counts.
+    h.state_mut().run("cell.set", serde_json::json!({"cell": "A3", "input": "1"})).unwrap();
+    h.state_mut().open_dialog("saveAs", serde_json::json!({}));
+    h.state_mut().run("cell.set", serde_json::json!({"cell": "A4", "input": "2"})).unwrap();
+    h.state_mut().open_dialog("saveAs", serde_json::json!({}));
+    let name = files.lock().unwrap().last().cloned().unwrap();
+    delivered.lock().unwrap().push(name);
+    h.run_steps(2);
+    assert!(!h.state().session.active().unwrap().is_dirty(), "a cancelled save does not stand in for the written one");
+}

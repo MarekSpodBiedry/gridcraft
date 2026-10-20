@@ -1,7 +1,7 @@
 //! The browser shell: web `Services`, drag-and-drop, and the eframe web runner.
 
 use gridcraft_engine::Session;
-use gridcraft_ui_egui::{Inbox, Services, SheetApp};
+use gridcraft_ui_egui::{Delivered, Inbox, Services, SheetApp};
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen::JsValue;
 
@@ -130,6 +130,8 @@ impl eframe::App for WebShell {
 fn services(inbox: Inbox, ctx: egui::Context) -> Services {
     let open_inbox = inbox.clone();
     let picture_ctx = ctx.clone();
+    let download_ctx = ctx.clone();
+    let delivered = Delivered::default();
     Services {
         copy_html: Some(Box::new(copy_html)),
         open_async: Some(Box::new(move || {
@@ -159,8 +161,9 @@ fn services(inbox: Inbox, ctx: egui::Context) -> Services {
                 ctx.request_repaint();
             });
         })),
-        download: Some(Box::new(|name: &str, bytes: &[u8]| {
-            if let Err(e) = download(name, bytes) {
+        delivered: Some(delivered.clone()),
+        download: Some(Box::new(move |name: &str, bytes: &[u8]| {
+            if let Err(e) = download(name, bytes, &delivered, &download_ctx) {
                 log::error!("download of {name} failed: {e}");
             }
         })),
@@ -275,7 +278,7 @@ fn mime_for(name: &str) -> &'static str {
 
 /// Trigger a browser save dialog or download of `bytes` named after `name`.
 
-fn download(name: &str, bytes: &[u8]) -> Result<(), String> {
+fn download(name: &str, bytes: &[u8], delivered: &Delivered, ctx: &egui::Context) -> Result<(), String> {
     let js = |e: wasm_bindgen::JsValue| format!("{e:?}");
     let window = web_sys::window().ok_or("no window")?;
 
@@ -324,13 +327,23 @@ fn download(name: &str, bytes: &[u8]) -> Result<(), String> {
 
         let bytes_vec = bytes.to_vec();
         let name_owned = name.to_string();
+        // Tells the app the file is written, so the document stops showing as edited.
+        let deliver = {
+            let (delivered, ctx, name) = (delivered.clone(), ctx.clone(), name.to_string());
+            move || {
+                delivered.lock().unwrap_or_else(|e| e.into_inner()).push(name.clone());
+                ctx.request_repaint();
+            }
+        };
+        let fallback_deliver = deliver.clone();
         // Anything but the user cancelling (no user gesture, a denied permission, a failed write)
         // falls back to an ordinary download, so a save never fails silently.
         let fallback = move |bytes: &[u8]| {
-            if let Some(w) = web_sys::window()
-                && let Err(e) = trigger_anchor_download(&w, &name_owned, bytes)
-            {
-                log::error!("download fallback failed: {e}");
+            if let Some(w) = web_sys::window() {
+                match trigger_anchor_download(&w, &name_owned, bytes) {
+                    Ok(()) => fallback_deliver(),
+                    Err(e) => log::error!("download fallback failed: {e}"),
+                }
             }
         };
         wasm_bindgen_futures::spawn_local(async move {
@@ -341,6 +354,7 @@ fn download(name: &str, bytes: &[u8]) -> Result<(), String> {
                         fallback(&bytes_vec);
                     } else {
                         log::info!("Successfully saved file through save file picker");
+                        deliver();
                     }
                 }
                 Err(e) => {
@@ -358,7 +372,10 @@ fn download(name: &str, bytes: &[u8]) -> Result<(), String> {
     }
 
     // Fallback for browsers without showSaveFilePicker (e.g. Firefox, Safari):
-    trigger_anchor_download(&window, name, bytes)
+    trigger_anchor_download(&window, name, bytes)?;
+    delivered.lock().unwrap_or_else(|e| e.into_inner()).push(name.to_string());
+    ctx.request_repaint();
+    Ok(())
 }
 
 async fn write_file_handle(handle: &JsValue, bytes: &[u8]) -> Result<(), String> {
