@@ -280,6 +280,7 @@ fn mime_for(name: &str) -> &'static str {
 
 fn download(name: &str, bytes: &[u8], delivered: &Delivered, ctx: &egui::Context) -> Result<(), String> {
     let js = |e: wasm_bindgen::JsValue| format!("{e:?}");
+    let id = delivered.begin();
     let window = web_sys::window().ok_or("no window")?;
 
     let show_picker_fn: Option<js_sys::Function> =
@@ -329,9 +330,9 @@ fn download(name: &str, bytes: &[u8], delivered: &Delivered, ctx: &egui::Context
         let name_owned = name.to_string();
         // Tells the app the file is written, so the document stops showing as edited.
         let deliver = {
-            let (delivered, ctx, name) = (delivered.clone(), ctx.clone(), name.to_string());
+            let (delivered, ctx) = (delivered.clone(), ctx.clone());
             move || {
-                delivered.lock().unwrap_or_else(|e| e.into_inner()).push(name.clone());
+                delivered.finish(id);
                 ctx.request_repaint();
             }
         };
@@ -373,7 +374,7 @@ fn download(name: &str, bytes: &[u8], delivered: &Delivered, ctx: &egui::Context
 
     // Fallback for browsers without showSaveFilePicker (e.g. Firefox, Safari):
     trigger_anchor_download(&window, name, bytes)?;
-    delivered.lock().unwrap_or_else(|e| e.into_inner()).push(name.to_string());
+    delivered.finish(id);
     ctx.request_repaint();
     Ok(())
 }
