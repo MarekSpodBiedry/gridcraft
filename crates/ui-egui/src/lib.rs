@@ -789,11 +789,11 @@ impl SheetApp {
             // Data › Get Data: pick a text file and import it into a new sheet of the open workbook
             // (`file.open` would replace the workbook). Without a native picker, fall back to Open.
             "getData" => {
-                if let Some(pick) = &self.services.pick_text {
+                if self.services.pick_text.is_some() {
                     if !self.commit_edit(0, 0, false, false) {
                         return;
                     }
-                    if let Some(path) = pick() {
+                    if let Some(path) = self.services.pick_text.as_ref().and_then(|pick| pick()) {
                         self.run_or_alert("data.getData", json!({"path": path}));
                     }
                 } else {
