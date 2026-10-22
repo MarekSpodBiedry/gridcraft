@@ -252,10 +252,20 @@ fn get_data_imports_a_csv_into_the_open_workbook_instead_of_replacing_it() {
     let csv = dir.join("people.csv");
     std::fs::write(&csv, "name,age\nAda,36\n").unwrap();
     let picked = csv.to_string_lossy().to_string();
-    let mut h = harness(Services { pick_open: Some(Box::new(move || Some(picked.clone()))), ..Default::default() });
+    let workbook_picker_used = Arc::new(Mutex::new(false));
+    let flag = workbook_picker_used.clone();
+    let mut h = harness(Services {
+        pick_text: Some(Box::new(move || Some(picked.clone()))),
+        pick_open: Some(Box::new(move || {
+            *flag.lock().unwrap() = true;
+            None
+        })),
+        ..Default::default()
+    });
     h.state_mut().run("cell.set", serde_json::json!({"cell": "A1", "input": "42"})).unwrap();
     // The ribbon button and the keytip both run `data.getData` with no file named.
     h.state_mut().run_or_alert("data.getData", serde_json::json!({}));
+    assert!(!*workbook_picker_used.lock().unwrap(), "Get Data offers text files, not the workbook picker");
     assert_eq!(h.state().session.documents().len(), 1, "the workbook is not replaced or duplicated");
     let d = h.state().session.active().unwrap();
     assert_eq!(d.wb.sheets.len(), 2, "the data lands on a new sheet");
