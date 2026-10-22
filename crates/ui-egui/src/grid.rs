@@ -344,6 +344,13 @@ impl Geo {
         let y = point.1.filter(|_| dy >= 0.0).map_or(self.scroll.y, |y| y - dy / self.z);
         vec2(x, y)
     }
+    /// What to keep under the pointer at the screen position `at` when the zoom becomes `zoom`:
+    /// `None` unless it is over cells. The position is mirrored first on a right-to-left sheet,
+    /// as `cells` is in logical coordinates.
+    pub fn zoom_anchor(&self, at: Pos2, zoom: u16) -> Option<ZoomAnchor> {
+        let at = self.mirror_pos(at);
+        self.cells.contains(at).then(|| ZoomAnchor { zoom, at, point: self.scrolled_point(at) })
+    }
     /// On-screen rectangle of a cell (`cell_rect` mirrored for right-to-left sheets).
     pub fn screen_cell_rect(&self, sh: &Sheet, c: CellRef) -> Rect {
         self.mirror_rect(self.cell_rect(sh, c))
@@ -673,7 +680,9 @@ pub fn show(app: &mut SheetApp, ui: &mut egui::Ui) {
     let mut zooming = WheelZoom::at(app, place, sh.zoom, now);
     // The first frame at the new zoom puts the sheet point that was under the pointer back under it.
     if let Some(a) = zooming.anchor.take().filter(|a| a.zoom == sh.zoom) {
-        view.scroll = make_geo(app, view.scroll).scroll_keeping(a.at, a.point);
+        // Rows first: the row-header width follows the visible rows, and the columns start after it.
+        view.scroll.y = make_geo(app, view.scroll).scroll_keeping(a.at, a.point).y.max(0.0);
+        view.scroll.x = make_geo(app, view.scroll).scroll_keeping(a.at, a.point).x;
     }
     if let Some((to, shown)) = zooming.glide {
         let glides = app.ui.animations && ui.ctx().global_style().animation_time > 0.0 && !app.shots.in_flight();
@@ -681,11 +690,7 @@ pub fn show(app: &mut SheetApp, ui: &mut egui::Ui) {
         let z = if glides { zoom_glide_step(shown, to, share) } else { to };
         // Zoom around the pointer: note the sheet point under it (this frame still shows the old zoom).
         if let Some(at) = ui.input(|i| i.pointer.hover_pos()).filter(|_| z != sh.zoom) {
-            let g = make_geo(app, view.scroll);
-            if g.cells.contains(at) {
-                let at = g.mirror_pos(at);
-                zooming.anchor = Some(ZoomAnchor { zoom: z, at, point: g.scrolled_point(at) });
-            }
+            zooming.anchor = make_geo(app, view.scroll).zoom_anchor(at, z);
         }
         let _ = app.session.run("view.zoom", json!({"percent": z}));
         zooming.glide = (z != to).then_some((to, z));
@@ -3467,6 +3472,27 @@ mod tests {
         let frozen = pos2(before.cells.left() + 1.0, before.cells.top() + 1.0);
         assert_eq!(before.scrolled_point(frozen), (None, None));
         assert_eq!(Geo::new(&sh, rect, scroll).scroll_keeping(frozen, point), scroll);
+    }
+
+    #[test]
+    fn zoom_anchor_on_a_right_to_left_sheet_uses_the_mirrored_position() {
+        // #1851: on a right-to-left sheet the row headers are on the screen's right, so a pointer
+        // near the left edge is over cells and must still anchor the zoom.
+        let mut sh = Sheet::new("S");
+        sh.right_to_left = true;
+        let rect = Rect::from_min_max(pos2(0.0, 0.0), pos2(1000.0, 700.0));
+        let scroll = vec2(2000.0, 3000.0);
+        let before = Geo::new(&sh, rect, scroll);
+        let near_left = pos2(24.0, 400.0);
+        let a = before.zoom_anchor(near_left, 200).expect("over cells");
+        assert_eq!(a.at, pos2(976.0, 400.0));
+        // The row headers (screen right edge) are not cells.
+        assert!(before.zoom_anchor(pos2(990.0, 400.0), 200).is_none());
+        let col_under = |g: &Geo, x: f32| g.col_at(&sh, g.mirror_x(x));
+        let was = col_under(&before, near_left.x);
+        sh.zoom = 200;
+        let kept = Geo::new(&sh, rect, Geo::new(&sh, rect, scroll).scroll_keeping(a.at, a.point));
+        assert_eq!(col_under(&kept, near_left.x), was);
     }
 
     #[test]
