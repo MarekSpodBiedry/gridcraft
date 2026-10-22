@@ -3488,11 +3488,10 @@ mod tests {
         assert_eq!(a.at, pos2(976.0, 400.0));
         // The row headers (screen right edge) are not cells.
         assert!(before.zoom_anchor(pos2(990.0, 400.0), 200).is_none());
-        let col_under = |g: &Geo, x: f32| g.col_at(&sh, g.mirror_x(x));
-        let was = col_under(&before, near_left.x);
+        let was = before.col_at(&sh, before.mirror_x(near_left.x));
         sh.zoom = 200;
         let kept = Geo::new(&sh, rect, Geo::new(&sh, rect, scroll).scroll_keeping(a.at, a.point));
-        assert_eq!(col_under(&kept, near_left.x), was);
+        assert_eq!(kept.col_at(&sh, kept.mirror_x(near_left.x)), was);
     }
 
     #[test]
