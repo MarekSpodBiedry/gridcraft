@@ -254,6 +254,8 @@ pub struct SheetApp {
     print_feedback_seen: Option<printing::Feedback>,
     /// Synthetic input from agents, one batch per frame (drags need several frames).
     pub synthetic: std::collections::VecDeque<Vec<egui::Event>>,
+    /// The current wheel touch has seen Ctrl/Cmd (see `grid::end_stuck_ctrl_wheel`).
+    ctrl_wheel: bool,
     pub control_rx: Option<std::sync::mpsc::Receiver<ControlRequest>>,
     pub grid: grid::GridState,
     pub perf: Perf,
@@ -316,6 +318,7 @@ impl SheetApp {
             printing: Default::default(),
             print_feedback_seen: None,
             synthetic: Default::default(),
+            ctrl_wheel: false,
             control_rx: None,
             grid: grid::GridState {
                 last_border: "bottom".into(),
@@ -1255,6 +1258,10 @@ impl SheetApp {
     }
 
     pub fn raw_input_hook(&mut self, raw: &mut egui::RawInput) {
+        // Wayland never ends a wheel touch, so egui would keep an earlier Ctrl+wheel's Ctrl (#2213).
+        if cfg!(all(unix, not(target_vendor = "apple"))) {
+            grid::end_stuck_ctrl_wheel(&mut raw.events, &mut self.ctrl_wheel);
+        }
         if let Some(mut batch) = self.synthetic.pop_front() {
             raw.events.append(&mut batch);
         }
