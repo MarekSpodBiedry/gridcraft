@@ -794,7 +794,15 @@ impl SheetApp {
                         return;
                     }
                     if let Some(path) = self.services.pick_text.as_ref().and_then(|pick| pick()) {
-                        self.run_or_alert("data.getData", json!({"path": path}));
+                        // Keep the caller's import options (delimiter, sheet) and add the picked file.
+                        let mut import = params;
+                        match import.as_object_mut() {
+                            Some(o) => {
+                                o.insert("path".into(), json!(path));
+                            }
+                            None => import = json!({"path": path}),
+                        }
+                        self.run_or_alert("data.getData", import);
                     }
                 } else {
                     self.open_dialog("open", json!({}));
