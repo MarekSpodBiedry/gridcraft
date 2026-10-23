@@ -2606,8 +2606,7 @@ fn get_data_without_a_file_asks_for_one_with_the_import_options_and_is_not_recor
     let [crate::UiRequest::Dialog(name, p)] = requests.as_slice() else { panic!("expected one dialog request") };
     assert_eq!((name.as_str(), &p["delimiter"], &p["sheet"]), ("getData", &json!(";"), &json!("Sales")));
     assert_eq!(s.journal.len(), before, "the picker request is not an import step");
-    s.execute("data.getData", json!({"text": "a;b
-1;2", "delimiter": ";"})).unwrap();
+    s.execute("data.getData", json!({"text": "a;b\n1;2", "delimiter": ";"})).unwrap();
     assert_eq!(s.journal.len(), before + 1, "an import with data is recorded");
 }
 
