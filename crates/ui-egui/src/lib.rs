@@ -1258,12 +1258,13 @@ impl SheetApp {
     }
 
     pub fn raw_input_hook(&mut self, raw: &mut egui::RawInput) {
-        // Wayland never ends a wheel touch, so egui would keep an earlier Ctrl+wheel's Ctrl (#2213).
-        if cfg!(all(unix, not(target_vendor = "apple"))) {
-            grid::end_stuck_ctrl_wheel(&mut raw.events, &mut self.ctrl_wheel);
-        }
         if let Some(mut batch) = self.synthetic.pop_front() {
             raw.events.append(&mut batch);
+        }
+        // Wayland never ends a wheel touch, so egui would keep an earlier Ctrl+wheel's Ctrl (#2213).
+        // After the synthetic batch is added, so agent-sent wheel events are tracked too.
+        if cfg!(all(unix, not(target_vendor = "apple"))) {
+            grid::end_stuck_ctrl_wheel(&mut raw.events, &mut self.ctrl_wheel);
         }
     }
 
