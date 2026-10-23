@@ -2607,7 +2607,8 @@ fn get_data_without_a_file_asks_for_one_with_the_import_options_and_is_not_recor
     assert_eq!((name.as_str(), &p["delimiter"], &p["sheet"]), ("getData", &json!(";"), &json!("Sales")));
     assert_eq!(s.journal.len(), before, "the picker request is not an import step");
     s.execute("data.getData", json!({"text": "a;b\n1;2", "delimiter": ";"})).unwrap();
-    assert_eq!(s.journal.len(), before + 1, "an import with data is recorded");
+    // The import journals the steps it runs too, so check that it is there, not how many entries it adds.
+    assert!(s.journal[before..].iter().any(|(id, _)| id == "data.getData"), "an import with data is recorded");
 }
 
 fn reopen(s: &mut Session) {
