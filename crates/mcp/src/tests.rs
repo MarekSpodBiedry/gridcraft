@@ -177,9 +177,9 @@ fn every_tool_survives_hostile_arguments() {
 
 #[test]
 fn destructive_hint_matches_capability() {
-    // Overwrite or take back cell data, or replace the workbook / the file on disk.
+    // Overwrite or take back cell data, or replace the workbook / a file on disk (`screenshot` writes a PNG over `path`).
     let overwrite = ["execute_command", "write_range", "set_cell", "format_range", "sort_range", "undo", "redo"];
-    let replace = ["open_workbook", "save_workbook", "new_workbook"];
+    let replace = ["open_workbook", "save_workbook", "new_workbook", "screenshot"];
     for t in tool_definitions() {
         let name = t["name"].as_str().unwrap();
         let a = &t["annotations"];
