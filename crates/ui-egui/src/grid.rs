@@ -3109,7 +3109,8 @@ fn point_keys_off_sheet(app: &mut SheetApp, ui: &mut egui::Ui) {
         let sign = if rtl { -1 } else { 1 };
         use egui::Key;
         for (k, dr, dc) in [(Key::ArrowUp, -1, 0), (Key::ArrowDown, 1, 0), (Key::ArrowLeft, 0, -sign), (Key::ArrowRight, 0, sign)] {
-            let (plain, extend) = ui.input_mut(|i| (i.consume_key(egui::Modifiers::NONE, k), i.consume_key(egui::Modifiers::SHIFT, k)));
+            // Shift first: a plain pattern matches logically and would also take Shift+arrow.
+            let (extend, plain) = ui.input_mut(|i| (i.consume_key(egui::Modifiers::SHIFT, k), i.consume_key(egui::Modifiers::NONE, k)));
             if plain || extend {
                 point_move(app, &mut ed, dr, dc, extend);
             }
