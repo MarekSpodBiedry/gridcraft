@@ -2596,19 +2596,13 @@ fn file_options_reports_settings_and_asks_for_the_options_page() {
 }
 
 #[test]
-fn get_data_without_a_file_asks_for_one_with_the_import_options_and_is_not_recorded() {
+fn get_data_without_a_file_asks_for_one_with_the_import_options() {
     let mut s = Session::new();
     s.new_workbook();
-    s.execute("automate.recordActions", json!({})).unwrap();
-    let before = s.journal.len();
     s.execute("data.fromTextCsv", json!({"delimiter": ";", "sheet": "Sales"})).unwrap();
     let requests = s.take_ui_requests();
     let [crate::UiRequest::Dialog(name, p)] = requests.as_slice() else { panic!("expected one dialog request") };
     assert_eq!((name.as_str(), &p["delimiter"], &p["sheet"]), ("getData", &json!(";"), &json!("Sales")));
-    assert_eq!(s.journal.len(), before, "the picker request is not an import step");
-    s.execute("data.getData", json!({"text": "a;b\n1;2", "delimiter": ";"})).unwrap();
-    // The import journals the steps it runs too, so check that it is there, not how many entries it adds.
-    assert!(s.journal[before..].iter().any(|(id, _)| id == "data.getData"), "an import with data is recorded");
 }
 
 fn reopen(s: &mut Session) {

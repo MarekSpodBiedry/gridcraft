@@ -414,7 +414,6 @@ impl Session {
         }
         let before = self.active().map(|d| (d.uid, d.wb.clone(), d.selection.clone()));
         let params = if params.is_null() { Json::Object(Default::default()) } else { params };
-        let queued_before = self.ui_requests.len();
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (spec.run)(self, &params)));
         let result = match result {
             Ok(r) => r,
@@ -432,9 +431,7 @@ impl Session {
                 return Err(EngineError::Internal(id.to_string(), msg));
             }
         };
-        // A Get Data call that only queued its file picker is not an import step; the picked path is journaled instead.
-        let only_asked_for_file = self.ui_requests.iter().skip(queued_before).any(|q| matches!(q, UiRequest::Dialog(name, _) if name == "getData"));
-        if spec.journal && result.is_ok() && !only_asked_for_file {
+        if spec.journal && result.is_ok() {
             self.push_journal(id, cmd::journal_params(&params));
         }
         if spec.undoable
